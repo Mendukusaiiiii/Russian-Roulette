@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Russian Roulette</title>
+  <style>
+    :root{
+      --bg:#0f1724; --card:#0b1220; --accent:#f97316; --muted:#94a3b8;
+    }
+    *{box-sizing:border-box;font-family:Inter,ui-sans-serif,system-ui,Arial}
+    body{min-height:100vh;background:radial-gradient(ellipse at 20% 10%, rgba(249,115,22,0.06), transparent 10%),var(--bg);color:#e6eef6;display:flex;align-items:center;justify-content:center;padding:20px}
+    .wrap{width:940px;max-width:96%;display:grid;grid-template-columns:420px 1fr;gap:20px}
+    .panel{background:linear-gradient(180deg,rgba(255,255,255,0.02),transparent);border:1px solid rgba(255,255,255,0.04);padding:18px;border-radius:12px;box-shadow:0 8px 30px rgba(2,6,23,0.6)}
+    header{display:flex;align-items:center;gap:12px;margin-bottom:12px}
+    h1{font-size:20px;margin:0}
+    p.lead{margin:0;color:var(--muted);font-size:13px}
+    .revolver{display:flex;flex-direction:column;align-items:center;gap:12px}
+    .cylinder-wrap{width:300px;height:300px;position:relative}
+    .cylinder{width:200px;height:200px;border-radius:50%;background:linear-gradient(180deg,#101218,#0a0d11);position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);display:grid;place-items:center}
+    .chamber{position:absolute;width:46px;height:46px;border-radius:50%;background:linear-gradient(180deg,#edf2ff11,#0003);display:flex;align-items:center;justify-content:center;border:2px solid rgba(255,255,255,0.06)}
+    .chamber.bullet::after{content:'';width:18px;height:18px;border-radius:50%;background:linear-gradient(180deg,#ffefb3,#ffb703);box-shadow:0 0 8px rgba(255,183,3,0.6)}
+    .cylinder::before{content:'';position:absolute;width:94px;height:94px;border-radius:50%;background:linear-gradient(180deg,#06080a,#121418);}
+    .spinning{transition:transform 1s cubic-bezier(.22,.9,.2,1)}
+    .marker{position:absolute;top:6%;left:50%;transform:translateX(-50%);width:6px;height:20px;background:var(--accent);border-radius:3px}
+    .controls{display:flex;flex-direction:column;gap:10px;width:100%}
+    label{font-size:13px;color:var(--muted)}
+    .row{display:flex;gap:8px;align-items:center}
+    input[type=range]{flex:1}
+    button{background:linear-gradient(90deg,var(--accent),#ffb88c);border:none;padding:10px 14px;border-radius:10px;color:#081225;font-weight:700;cursor:pointer}
+    button.ghost{background:transparent;border:1px solid rgba(255,255,255,0.06);color:var(--muted);font-weight:600}
+    .status{padding:12px;background:#071026;border-radius:8px;border:1px solid rgba(255,255,255,0.02)}
+    .info{display:flex;flex-direction:column;gap:12px}
+    .log{height:220px;overflow:auto;padding:12px;background:linear-gradient(180deg,#041426,#071030);border-radius:8px;border:1px solid rgba(255,255,255,0.02);font-size:13px}
+    .players{display:flex;gap:8px}
+    .player{flex:1;padding:10px;border-radius:8px;background:#061025;border:1px solid rgba(255,255,255,0.02)}
+    .player .name{font-weight:700}
+    .controls-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+    footer{display:flex;justify-content:space-between;align-items:center;color:var(--muted);font-size:12px;margin-top:10px}
+    @media (max-width:840px){.wrap{grid-template-columns:1fr}}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="panel">
+      <header>
+        <div>
+          <h1>Russian Roulette</h1>
+          <p class="lead">Single bullet revolver. You can play with a Bot or with a friend.</p>
+        </div>
+      </header>
+
+      <div class="revolver">
+        <div class="cylinder-wrap">
+          <div class="marker"></div>
+          <div id="cylinder" class="cylinder spinning" style="transform:translate(-50%,-50%) rotate(0deg)"></div>
+        </div>
+
+        <div class="controls">
+          <div class="row">
+            <label for="chambers">Chambers: <strong id="chCount">6</strong></label>
+            <input id="chambers" type="range" min="2" max="6" value="6">
+          </div>
+          <div class="row controls-grid">
+            <button id="spinBtn">Spin Cylinder</button>
+            <button id="shootBtn">Pull Trigger</button>
+            <button id="resetBtn" class="ghost">Reset Game</button>
+            <button id="toggleBot" class="ghost">Play vs Bot: ON</button>
+          </div>
+
+          <div class="status">
+            <div>Last outcome: <span id="lastOutcome">—</span></div>
+            <div>Rounds played: <span id="rounds">0</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel info">
+      <div class="players">
+        <div class="player" id="playerBox"><div class="name">Player 1</div><div>Alive: <span id="playerAlive">Yes</span></div></div>
+        <div class="player" id="botBox"><div class="name" id="secondPlayerName">Bot</div><div>Alive: <span id="botAlive">Yes</span></div></div>
+      </div>
+
+      <div class="log" id="log"></div>
+
+      <footer>
+        <div>Made by Mendukusai</div>
+        <div><small>Tip: use <em>Spin Cylinder</em> before each shot for a fully random attempt.</small></div>
+      </footer>
+    </div>
+  </div>
+
+<script>
+const audioCtx = new (window.AudioContext||window.webkitAudioContext)();
+function playClick(){
+  const o = audioCtx.createOscillator();
+  const g = audioCtx.createGain();
+  o.type='square'; o.frequency.value=800;
+  g.gain.value=0.02; o.connect(g); g.connect(audioCtx.destination);
+  o.start(); o.stop(audioCtx.currentTime+0.06);
+}
+function playBang(){
+  const o = audioCtx.createOscillator();
+  const g = audioCtx.createGain();
+  o.type='sawtooth'; o.frequency.value=120;
+  g.gain.value=0.15; o.connect(g);
+  const noise = audioCtx.createBufferSource();
+  const buffer = audioCtx.createBuffer(1, audioCtx.sampleRate*0.2, audioCtx.sampleRate);
+  const data = buffer.getChannelData(0); for(let i=0;i<data.length;i++){data[i]=(Math.random()*2-1)*0.5}
+  noise.buffer=buffer; const ng = audioCtx.createGain(); ng.gain.value=0.5; noise.connect(ng); ng.connect(audioCtx.destination);
+  g.connect(audioCtx.destination);
+  o.start(); noise.start();
+  o.stop(audioCtx.currentTime+0.15); noise.stop(audioCtx.currentTime+0.15);
+}
+
+
+const cylinder = document.getElementById('cylinder');
+const chambersRange = document.getElementById('chambers');
+const chCountLabel = document.getElementById('chCount');
+const spinBtn = document.getElementById('spinBtn');
+const shootBtn = document.getElementById('shootBtn');
+const resetBtn = document.getElementById('resetBtn');
+const toggleBot = document.getElementById('toggleBot');
+const log = document.getElementById('log');
+const lastOutcome = document.getElementById('lastOutcome');
+const roundsLabel = document.getElementById('rounds');
+const playerAliveEl = document.getElementById('playerAlive');
+const botAliveEl = document.getElementById('botAlive');
+const secondPlayerNameEl = document.getElementById('secondPlayerName');
+
+
+let chambers = parseInt(chambersRange.value,10);
+let bulletIndex = 0;
+let currentIndex = 0;
+let rounds = 0;
+let spinning = false;
+let botOn = true;
+let playerAlive = true;
+let botAlive = true;
+let turn = 'player';
+
+function buildChambers(){
+  cylinder.innerHTML = '';
+  const center = 100;
+  const radius = 70;
+  for(let i=0;i<chambers;i++){
+    const el = document.createElement('div');
+    el.className='chamber';
+    const angle = (i / chambers) * Math.PI*2 - Math.PI/2;
+    const x = center + Math.cos(angle)*radius - 23;
+    const y = center + Math.sin(angle)*radius - 23;
+    el.style.left = x+'px'; el.style.top = y+'px';
+    el.dataset.index = i;
+    cylinder.appendChild(el);
+  }
+}
+
+function placeBulletRandom(){ bulletIndex = Math.floor(Math.random()*chambers); }
+function refreshVisuals(showBullet=false){
+  const nodes = cylinder.querySelectorAll('.chamber');
+  nodes.forEach(n=>{n.classList.remove('bullet'); if(showBullet && parseInt(n.dataset.index,10)===bulletIndex) n.classList.add('bullet')});
+}
+
+async function spinCylinder(animated=true){
+  if(spinning) return; spinning=true;
+  const target = Math.floor(Math.random()*chambers);
+  const degPer = 360/chambers;
+  const extraRotations = 3 + Math.floor(Math.random()*3);
+  const finalDeg = -(target*degPer) - extraRotations*360;
+  cylinder.style.transition = 'transform 1s cubic-bezier(.22,.9,.2,1)';
+  cylinder.style.transform = `translate(-50%,-50%) rotate(${finalDeg}deg)`;
+  await new Promise(r => setTimeout(r,1100));
+  currentIndex = target % chambers;
+  cylinder.style.transition = '';
+  const normalized = -(currentIndex*degPer);
+  cylinder.style.transform = `translate(-50%,-50%) rotate(${normalized}deg)`;
+  spinning=false;
+}
+
+function addLog(msg){
+  const el = document.createElement('div'); el.textContent = '['+new Date().toLocaleTimeString()+'] '+msg; log.prepend(el);
+}
+
+function pullTrigger(actor){
+  if(spinning) return;
+  if(!playerAlive || !botAlive) return;
+  rounds++;
+  roundsLabel.textContent = rounds;
+  addLog(`${actor} pulls the trigger...`);
+
+  if(currentIndex === bulletIndex){
+    playBang();
+    lastOutcome.textContent = `${actor} got BLOWN!`;
+    addLog(`${actor} got blown. Game over.`);
+    if(actor==='Player 1') playerAlive=false; else botAlive=false;
+    updatePlayers();
+    refreshVisuals(true);
+    return;
+  } else {
+    playClick();
+    lastOutcome.textContent = `${actor} survived .`;
+    addLog(`${actor} survived.`);
+
+    
+    currentIndex = (currentIndex + 1) % chambers;
+    const degPer = 360 / chambers;
+    spinning = true;
+    cylinder.style.transition = 'transform 0.4s ease';
+    cylinder.style.transform = `translate(-50%,-50%) rotate(${-currentIndex * degPer}deg)`;
+    setTimeout(() => {
+      cylinder.style.transition = '';
+      spinning = false;
+    }, 400);
+  }
+}
+
+function updatePlayers(){
+  playerAliveEl.textContent = playerAlive ? 'Yes' : 'No';
+  botAliveEl.textContent = botAlive ? 'Yes' : 'No';
+}
+
+function resetGame(){
+  rounds=0; roundsLabel.textContent=rounds; lastOutcome.textContent='—'; log.innerHTML=''; playerAlive=true; botAlive=true; updatePlayers();
+  placeBulletRandom(); currentIndex=0; refreshVisuals(false);
+  const degPer=360/chambers; cylinder.style.transform=`translate(-50%,-50%) rotate(${-currentIndex*degPer}deg)`;
+}
+
+chambersRange.addEventListener('input',e=>{
+  chambers = parseInt(e.target.value,10); chCountLabel.textContent = chambers; buildChambers(); placeBulletRandom(); resetGame();
+});
+
+spinBtn.addEventListener('click', async ()=>{
+  placeBulletRandom(); await spinCylinder(true); refreshVisuals(false); addLog('Cylinder spun.');
+});
+
+shootBtn.addEventListener('click', async ()=>{
+  if(audioCtx.state!=='running') audioCtx.resume();
+  if(!playerAlive || !botAlive){ addLog('Game is over. Reset to play again.'); return; }
+  if(turn==='player'){
+    pullTrigger('Player 1');
+    updatePlayers();
+    if(!botAlive || !playerAlive) return;
+    turn='bot';
+    if(botOn){
+      setTimeout(()=>{
+        placeBulletRandom(); spinCylinder(true).then(()=>{ pullTrigger(secondPlayerNameEl.textContent); updatePlayers(); turn='player'; });
+      }, 900 + Math.random()*700);
+    } else {
+      turn='bot';
+    }
+  } else {
+    pullTrigger(secondPlayerNameEl.textContent); updatePlayers(); turn='player';
+  }
+});
+
+resetBtn.addEventListener('click',()=>{placeBulletRandom(); resetGame(); addLog('Game reset.');});
+
+toggleBot.addEventListener('click',()=>{
+  botOn = !botOn;
+  toggleBot.textContent = `Play vs Bot: ${botOn? 'ON':'OFF'}`;
+  secondPlayerNameEl.textContent = botOn ? 'Bot' : 'Player 2';
+});
+
+buildChambers(); placeBulletRandom(); resetGame();
+setTimeout(()=>{spinCylinder(true);},300);
+</script>
+</body>
+</html>
